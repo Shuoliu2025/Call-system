@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自动叫号系统 - 历史记录</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚗 自动叫号系统</h1>
+            <nav>
+                <a href="index.html" class="nav-link">预约登记</a>
+                <a href="display.html" class="nav-link">叫号显示</a>
+                <a href="history.html" class="nav-link active">历史记录</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="history-section">
+                <div class="section-header">
+                    <h2>📊 今日记录</h2>
+                    <button id="refreshHistory" class="refresh-btn">🔄 刷新</button>
+                </div>
+
+                <div class="history-stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalAppointments">0</div>
+                        <div class="stat-label">总预约</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="completedOutbound">0</div>
+                        <div class="stat-label">已出库</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="pendingAppointments">0</div>
+                        <div class="stat-label">等待中</div>
+                    </div>
+                </div>
+
+                <div class="history-table">
+                    <table id="historyTable">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>姓名</th>
+                                <th>手机号</th>
+                                <th>车牌号</th>
+                                <th>状态</th>
+                                <th>出库时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody">
+                            <!-- 动态生成 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="no-history" id="noHistory" style="display: none;">
+                    <div class="empty-state">
+                        <div class="empty-icon">📋</div>
+                        <h3>暂无历史记录</h3>
+                        <p>今日还没有预约记录</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function loadHistory() {
+            Promise.all([
+                fetch('/api/history').then(r => r.json()),
+                fetch('/api/appointments').then(r => r.json())
+            ])
+            .then(([history, appointments]) => {
+                updateStats(history, appointments);
+                updateTable(history);
+            })
+            .catch(error => {
+                console.error('加载历史记录失败:', error);
+            });
+        }
+
+        function updateStats(history, appointments) {
+            const totalAppointments = appointments.appointments.length + history.length;
+            const completedOutbound = history.filter(h => h.action === 'outbound').length;
+            const pendingAppointments = appointments.appointments.length;
+
+            document.getElementById('totalAppointments').textContent = totalAppointments;
+            document.getElementById('completedOutbound').textContent = completedOutbound;
+            document.getElementById('pendingAppointments').textContent = pendingAppointments;
+        }
+
+        function updateTable(history) {
+            const tbody = document.getElementById('historyBody');
+            const noHistory = document.getElementById('noHistory');
+            const table = document.querySelector('.history-table');
+
+            if (history.length === 0) {
+                table.style.display = 'none';
+                noHistory.style.display = 'block';
+                return;
+            }
+
+            table.style.display = 'block';
+            noHistory.style.display = 'none';
+
+            tbody.innerHTML = history
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                .map(record => {
+                    const appointmentTime = new Date(record.timestamp).toLocaleString('zh-CN');
+                    const outboundTime = record.outboundTime ?
+                        new Date(record.outboundTime).toLocaleString('zh-CN') : '-';
+
+                    const status = record.action === 'outbound' ? '已出库' : '已预约';
+                    const statusClass = record.action === 'outbound' ? 'status-completed' : 'status-pending';
+
+                    return `
+                        <tr>
+                            <td>${appointmentTime}</td>
+                            <td>${record.name}</td>
+                            <td>${record.phone}</td>
+                            <td class="license-plate">${record.licensePlate}</td>
+                            <td><span class="status-badge ${statusClass}">${status}</span></td>
+                            <td>${outboundTime}</td>
+                        </tr>
+                    `;
+                })
+                .join('');
+        }
+
+        function showMessage(text, type = 'success') {
+            const popup = document.createElement('div');
+            popup.className = `message-toast ${type}`;
+            popup.textContent = text;
+            document.body.appendChild(popup);
+
+            setTimeout(() => {
+                popup.classList.add('show');
+            }, 100);
+
+            setTimeout(() => {
+                popup.classList.remove('show');
+                setTimeout(() => {
+                    document.body.removeChild(popup);
+                }, 300);
+            }, 3000);
+        }
+
+        document.getElementById('refreshHistory').addEventListener('click', () => {
+            loadHistory();
+            showMessage('历史记录已刷新');
+        });
+
+        loadHistory();
+    </script>
+</body>
+</html>

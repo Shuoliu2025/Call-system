@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自动叫号系统 - 叫号显示</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚗 自动叫号系统</h1>
+            <nav>
+                <a href="index.html" class="nav-link">预约登记</a>
+                <a href="display.html" class="nav-link active">叫号显示</a>
+                <a href="history.html" class="nav-link">历史记录</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="display-board">
+                <div class="status-bar">
+                    <div class="current-time" id="currentTime"></div>
+                    <div class="system-status">
+                        <span>系统状态: </span>
+                        <span id="displaySystemStatus" class="status-indicator">未开始</span>
+                    </div>
+                    <div class="queue-stats">
+                        <span>等待车辆: </span>
+                        <span id="totalWaiting" class="queue-number">0</span>
+                    </div>
+                </div>
+
+                <div class="appointments-grid" id="appointmentsGrid">
+                    <!-- 动态生成预约信息 -->
+                </div>
+
+                <div class="no-appointments" id="noAppointments" style="display: none;">
+                    <div class="empty-state">
+                        <div class="empty-icon">🚫</div>
+                        <h3>暂无预约信息</h3>
+                        <p>当前没有待叫号的车辆</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>🎛️ 控制面板</h3>
+                <div class="control-buttons">
+                    <button id="refreshBtn" class="control-btn">
+                        <span>🔄</span>
+                        刷新数据
+                    </button>
+                    <button id="autoRefreshBtn" class="control-btn toggle-btn" data-active="true">
+                        <span>⚡</span>
+                        <span class="btn-text">自动刷新: 开</span>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let autoRefresh = true;
+        let refreshInterval;
+
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('currentTime').textContent = timeString;
+        }
+
+        function updateDisplay(data) {
+            const { appointments, totalWaiting, systemActive } = data;
+
+            document.getElementById('displaySystemStatus').textContent = systemActive ? '运行中' : '未开始';
+            document.getElementById('displaySystemStatus').className =
+                `status-indicator ${systemActive ? 'active' : 'inactive'}`;
+
+            document.getElementById('totalWaiting').textContent = totalWaiting;
+
+            const grid = document.getElementById('appointmentsGrid');
+            const noAppointments = document.getElementById('noAppointments');
+
+            if (appointments.length === 0) {
+                grid.style.display = 'none';
+                noAppointments.style.display = 'block';
+                return;
+            }
+
+            grid.style.display = 'grid';
+            noAppointments.style.display = 'none';
+
+            grid.innerHTML = appointments.map((apt, index) => `
+                <div class="appointment-card ${index === 0 ? 'current' : ''}">
+                    <div class="card-header">
+                        <div class="queue-number">${index + 1}</div>
+                        <div class="appointment-time">
+                            ${new Date(apt.timestamp).toLocaleTimeString('zh-CN')}
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-row">
+                            <span class="label">姓名:</span>
+                            <span class="value">${apt.name}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">手机:</span>
+                            <span class="value">${apt.phone}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">车牌:</span>
+                            <span class="value license-plate">${apt.licensePlate}</span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="outbound-btn" onclick="markOutbound('${apt.id}')">
+                            ✅ 出库完成
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function markOutbound(appointmentId) {
+            if (confirm('确认该车辆已出库？')) {
+                fetch(`/api/outbound/${appointmentId}`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('出库完成！', 'success');
+                    } else {
+                        showMessage('操作失败，请重试', 'error');
+                    }
+                })
+                .catch(error => {
+                    showMessage('网络错误，请重试', 'error');
+                });
+            }
+        }
+
+        function showMessage(text, type = 'success') {
+            const popup = document.createElement('div');
+            popup.className = `message-toast ${type}`;
+            popup.textContent = text;
+            document.body.appendChild(popup);
+
+            setTimeout(() => {
+                popup.classList.add('show');
+            }, 100);
+
+            setTimeout(() => {
+                popup.classList.remove('show');
+                setTimeout(() => {
+                    document.body.removeChild(popup);
+                }, 300);
+            }, 3000);
+        }
+
+        socket.on('displayUpdate', updateDisplay);
+
+        document.getElementById('refreshBtn').addEventListener('click', () => {
+            fetch('/api/appointments')
+                .then(response => response.json())
+                .then(data => {
+                    updateDisplay(data);
+                    showMessage('数据已刷新');
+                });
+        });
+
+        document.getElementById('autoRefreshBtn').addEventListener('click', function() {
+            autoRefresh = !autoRefresh;
+            this.dataset.active = autoRefresh;
+            this.querySelector('.btn-text').textContent = `自动刷新: ${autoRefresh ? '开' : '关'}`;
+        });
+
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        fetch('/api/appointments')
+            .then(response => response.json())
+            .then(data => updateDisplay(data));
+    </script>
+</body>
+</html>

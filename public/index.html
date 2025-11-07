@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自动叫号系统 - 预约</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚗 自动叫号系统</h1>
+            <nav>
+                <a href="index.html" class="nav-link active">预约登记</a>
+                <a href="display.html" class="nav-link">叫号显示</a>
+                <a href="history.html" class="nav-link">历史记录</a>
+            </nav>
+        </header>
+
+        <main>
+            <div class="appointment-form">
+                <h2>车辆预约登记</h2>
+
+                <form id="appointmentForm">
+                    <div class="form-group">
+                        <label for="name">姓名 *</label>
+                        <input type="text" id="name" name="name" required placeholder="请输入姓名">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="phone">手机号 *</label>
+                        <input type="tel" id="phone" name="phone" required placeholder="请输入手机号" pattern="[0-9]{11}">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="licensePlate">车牌号 *</label>
+                        <input type="text" id="licensePlate" name="licensePlate" required placeholder="例: 京A12345" style="text-transform: uppercase;">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="isOutbound" name="isOutbound">
+                            <span class="checkmark"></span>
+                            出库车辆（勾选表示该车辆需要出库）
+                        </label>
+                    </div>
+
+                    <button type="submit" class="submit-btn">
+                        <span class="btn-text">提交预约</span>
+                        <span class="btn-loading" style="display: none;">提交中...</span>
+                    </button>
+                </form>
+
+                <div class="appointment-info">
+                    <div class="info-card">
+                        <h3>📋 排队信息</h3>
+                        <div id="queueInfo">
+                            <p class="queue-count">当前排队: <span id="waitingCount">0</span> 辆</p>
+                            <p class="system-status">系统状态: <span id="systemStatus">未开始</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="notice">
+                <h3>📢 温馨提示</h3>
+                <ul>
+                    <li>请确保填写信息准确无误</li>
+                    <li>系统每日8:30开始叫号</li>
+                    <li>每次显示4辆车信息</li>
+                    <li>出库后会自动补充下一辆车</li>
+                    <li>当天结束后会自动保存记录</li>
+                </ul>
+            </div>
+        </main>
+
+        <div class="message-popup" id="messagePopup" style="display: none;">
+            <div class="message-content">
+                <div class="message-icon">✓</div>
+                <div class="message-text" id="messageText"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
