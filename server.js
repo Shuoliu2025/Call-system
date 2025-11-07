@@ -1,31 +1,21 @@
 const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
 const cors = require('cors');
-const cron = require('node-cron');
 const fs = require('fs').promises;
 const path = require('path');
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
-
-const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, 'data');
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
 
+// 数据目录路径
+const DATA_DIR = path.join(process.cwd(), 'data');
+
+// 内存中的数据存储
 let appointments = [];
-let currentDisplay = [];
 let isSystemActive = false;
 
+// 确保数据目录存在
 async function ensureDataDir() {
   try {
     await fs.access(DATA_DIR);
@@ -34,6 +24,7 @@ async function ensureDataDir() {
   }
 }
 
+// 加载预约数据
 async function loadAppointments() {
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -45,48 +36,46 @@ async function loadAppointments() {
   }
 }
 
+// 保存预约数据
 async function saveAppointments() {
-  await ensureDataDir();
-  const today = new Date().toISOString().split('T')[0];
-  const filePath = path.join(DATA_DIR, `appointments_${today}.json`);
-  await fs.writeFile(filePath, JSON.stringify(appointments, null, 2));
-}
-
-async function saveHistory(appointment, action) {
-  await ensureDataDir();
-  const today = new Date().toISOString().split('T')[0];
-  const historyPath = path.join(DATA_DIR, `history_${today}.json`);
-
-  let history = [];
   try {
-    const data = await fs.readFile(historyPath, 'utf8');
-    history = JSON.parse(data);
+    await ensureDataDir();
+    const today = new Date().toISOString().split('T')[0];
+    const filePath = path.join(DATA_DIR, `appointments_${today}.json`);
+    await fs.writeFile(filePath, JSON.stringify(appointments, null, 2));
   } catch (error) {
-    history = [];
+    console.error('保存数据失败:', error);
   }
-
-  history.push({
-    ...appointment,
-    action,
-    timestamp: new Date().toISOString()
-  });
-
-  await fs.writeFile(historyPath, JSON.stringify(history, null, 2));
 }
 
-function updateDisplay() {
-  currentDisplay = appointments
-    .filter(apt => !apt.isOutbound)
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-    .slice(0, 4);
+// 保存历史记录
+async function saveHistory(appointment, action) {
+  try {
+    await ensureDataDir();
+    const today = new Date().toISOString().split('T')[0];
+    const historyPath = path.join(DATA_DIR, `history_${today}.json`);
 
-  io.emit('displayUpdate', {
-    appointments: currentDisplay,
-    totalWaiting: appointments.filter(apt => !apt.isOutbound).length,
-    systemActive: isSystemActive
-  });
+    let history = [];
+    try {
+      const data = await fs.readFile(historyPath, 'utf8');
+      history = JSON.parse(data);
+    } catch (error) {
+      history = [];
+    }
+
+    history.push({
+      ...appointment,
+      action,
+      timestamp: new Date().toISOString()
+    });
+
+    await fs.writeFile(historyPath, JSON.stringify(history, null, 2));
+  } catch (error) {
+    console.error('保存历史记录失败:', error);
+  }
 }
 
+// 检查系统时间
 function checkSystemTime() {
   const now = new Date();
   const currentHour = now.getHours();
@@ -99,12 +88,22 @@ function checkSystemTime() {
   } else {
     isSystemActive = false;
   }
-
-  updateDisplay();
 }
 
+// 获取当前显示的预约
+function getCurrentDisplay() {
+  return appointments
+    .filter(apt => !apt.isOutbound)
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .slice(0, 4);
+}
+
+// API路由
+
+// 创建预约
 app.post('/api/appointments', async (req, res) => {
   try {
+    await loadAppointments();
     const { name, phone, licensePlate, isOutbound } = req.body;
 
     if (!name || !phone || !licensePlate) {
@@ -125,18 +124,16 @@ app.post('/api/appointments', async (req, res) => {
     appointments.push(appointment);
     await saveAppointments();
 
-    if (!appointment.isOutbound) {
-      updateDisplay();
-    }
-
     res.json({ success: true, appointment });
   } catch (error) {
     res.status(500).json({ error: '预约失败' });
   }
 });
 
+// 标记出库
 app.post('/api/outbound/:id', async (req, res) => {
   try {
+    await loadAppointments();
     const appointmentId = req.params.id;
     const appointment = appointments.find(apt => apt.id === appointmentId);
 
@@ -150,22 +147,32 @@ app.post('/api/outbound/:id', async (req, res) => {
     await saveAppointments();
     await saveHistory(appointment, 'outbound');
 
-    updateDisplay();
-
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: '出库操作失败' });
   }
 });
 
-app.get('/api/appointments', (req, res) => {
-  res.json({
-    appointments: appointments.filter(apt => !apt.isOutbound),
-    currentDisplay,
-    systemActive: isSystemActive
-  });
+// 获取预约列表
+app.get('/api/appointments', async (req, res) => {
+  try {
+    await loadAppointments();
+    checkSystemTime();
+
+    const currentDisplay = getCurrentDisplay();
+
+    res.json({
+      appointments: appointments.filter(apt => !apt.isOutbound),
+      currentDisplay,
+      systemActive: isSystemActive,
+      totalWaiting: appointments.filter(apt => !apt.isOutbound).length
+    });
+  } catch (error) {
+    res.status(500).json({ error: '获取预约列表失败' });
+  }
 });
 
+// 获取历史记录
 app.get('/api/history', async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -182,42 +189,36 @@ app.get('/api/history', async (req, res) => {
   }
 });
 
-cron.schedule('*/1 * * * *', () => {
-  checkSystemTime();
+// 获取系统状态
+app.get('/api/status', async (req, res) => {
+  try {
+    await loadAppointments();
+    checkSystemTime();
+
+    const currentDisplay = getCurrentDisplay();
+
+    res.json({
+      systemActive: isSystemActive,
+      currentTime: new Date().toISOString(),
+      totalWaiting: appointments.filter(apt => !apt.isOutbound).length,
+      currentDisplay
+    });
+  } catch (error) {
+    res.status(500).json({ error: '获取系统状态失败' });
+  }
 });
 
-cron.schedule('0 0 * * *', async () => {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-  await saveHistory(appointments, 'daily_save');
-  appointments = [];
-  await saveAppointments();
+// 健康检查
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-io.on('connection', (socket) => {
-  console.log('用户连接:', socket.id);
-
-  socket.emit('displayUpdate', {
-    appointments: currentDisplay,
-    totalWaiting: appointments.filter(apt => !apt.isOutbound).length,
-    systemActive: isSystemActive
-  });
-
-  socket.on('disconnect', () => {
-    console.log('用户断开连接:', socket.id);
-  });
-});
-
+// 初始化
 async function init() {
   await loadAppointments();
   checkSystemTime();
-
-  server.listen(PORT, () => {
-    console.log(`自动叫号系统运行在端口 ${PORT}`);
-    console.log(`访问地址: http://localhost:${PORT}`);
-  });
 }
 
 init();
+
+module.exports = app;

@@ -60,9 +60,7 @@
         </main>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io();
         let autoRefresh = true;
         let refreshInterval;
 
@@ -80,18 +78,18 @@
         }
 
         function updateDisplay(data) {
-            const { appointments, totalWaiting, systemActive } = data;
+            const { currentDisplay, totalWaiting, systemActive } = data;
 
             document.getElementById('displaySystemStatus').textContent = systemActive ? '运行中' : '未开始';
             document.getElementById('displaySystemStatus').className =
                 `status-indicator ${systemActive ? 'active' : 'inactive'}`;
 
-            document.getElementById('totalWaiting').textContent = totalWaiting;
+            document.getElementById('totalWaiting').textContent = totalWaiting || 0;
 
             const grid = document.getElementById('appointmentsGrid');
             const noAppointments = document.getElementById('noAppointments');
 
-            if (appointments.length === 0) {
+            if (!currentDisplay || currentDisplay.length === 0) {
                 grid.style.display = 'none';
                 noAppointments.style.display = 'block';
                 return;
@@ -100,7 +98,7 @@
             grid.style.display = 'grid';
             noAppointments.style.display = 'none';
 
-            grid.innerHTML = appointments.map((apt, index) => `
+            grid.innerHTML = currentDisplay.map((apt, index) => `
                 <div class="appointment-card ${index === 0 ? 'current' : ''}">
                     <div class="card-header">
                         <div class="queue-number">${index + 1}</div>
@@ -140,6 +138,7 @@
                 .then(data => {
                     if (data.success) {
                         showMessage('出库完成！', 'success');
+                        loadData(); // 立即刷新数据
                     } else {
                         showMessage('操作失败，请重试', 'error');
                     }
@@ -148,6 +147,17 @@
                     showMessage('网络错误，请重试', 'error');
                 });
             }
+        }
+
+        function loadData() {
+            fetch('/api/appointments')
+                .then(response => response.json())
+                .then(data => {
+                    updateDisplay(data);
+                })
+                .catch(error => {
+                    console.error('加载数据失败:', error);
+                });
         }
 
         function showMessage(text, type = 'success') {
@@ -168,29 +178,32 @@
             }, 3000);
         }
 
-        socket.on('displayUpdate', updateDisplay);
-
         document.getElementById('refreshBtn').addEventListener('click', () => {
-            fetch('/api/appointments')
-                .then(response => response.json())
-                .then(data => {
-                    updateDisplay(data);
-                    showMessage('数据已刷新');
-                });
+            loadData();
+            showMessage('数据已刷新');
         });
 
         document.getElementById('autoRefreshBtn').addEventListener('click', function() {
             autoRefresh = !autoRefresh;
             this.dataset.active = autoRefresh;
             this.querySelector('.btn-text').textContent = `自动刷新: ${autoRefresh ? '开' : '关'}`;
+
+            if (autoRefresh) {
+                refreshInterval = setInterval(loadData, 3000);
+            } else {
+                clearInterval(refreshInterval);
+            }
         });
 
+        // 初始化
         setInterval(updateTime, 1000);
         updateTime();
 
-        fetch('/api/appointments')
-            .then(response => response.json())
-            .then(data => updateDisplay(data));
+        // 初始加载数据
+        loadData();
+
+        // 自动刷新
+        refreshInterval = setInterval(loadData, 3000);
     </script>
 </body>
 </html>

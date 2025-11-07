@@ -1,9 +1,8 @@
 // 主应用逻辑
 class CallSystem {
     constructor() {
-        this.socket = io();
         this.initEventListeners();
-        this.initSocketListeners();
+        this.initPolling();
     }
 
     initEventListeners() {
@@ -13,18 +12,24 @@ class CallSystem {
         }
     }
 
-    initSocketListeners() {
-        this.socket.on('displayUpdate', (data) => {
+    initPolling() {
+        // 初始加载数据
+        this.loadSystemStatus();
+
+        // 每5秒轮询一次数据
+        setInterval(() => {
+            this.loadSystemStatus();
+        }, 5000);
+    }
+
+    async loadSystemStatus() {
+        try {
+            const response = await fetch('/api/status');
+            const data = await response.json();
             this.updateQueueInfo(data);
-        });
-
-        this.socket.on('connect', () => {
-            console.log('连接到服务器');
-        });
-
-        this.socket.on('disconnect', () => {
-            console.log('与服务器断开连接');
-        });
+        } catch (error) {
+            console.error('获取系统状态失败:', error);
+        }
     }
 
     async handleAppointmentSubmit(event) {
