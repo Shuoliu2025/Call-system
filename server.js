@@ -8,6 +8,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 静态文件服务
+app.use(express.static('public'));
+
 // 数据目录路径
 const DATA_DIR = path.join(process.cwd(), 'data');
 
@@ -213,6 +216,20 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 根路由处理
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// 处理其他页面路由
+app.get('/display.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'display.html'));
+});
+
+app.get('/history.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'history.html'));
+});
+
 // 初始化
 async function init() {
   await loadAppointments();
@@ -220,5 +237,13 @@ async function init() {
 }
 
 init();
+
+// 本地开发服务器
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`服务器运行在端口 ${PORT}`);
+  });
+}
 
 module.exports = app;
